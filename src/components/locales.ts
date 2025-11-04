@@ -78,6 +78,21 @@ export interface Locales {
   sheetsUnit: string;
   fieldsUnit: string;
   recordsUnit: string;
+  selectSheet: string;
+  selectDate: string;
+  startDate: string;
+  endDate: string;
+  singleDate: string;
+  dateRange: string;
+  confirm: string;
+  syncData: string;
+  syncing: string;
+  syncSuccess: string;
+  syncFailed: string;
+  deletingRecords: string;
+  insertingRecords: string;
+  pleaseSelectDate: string;
+  dataSource: string;
 }
 
 export const locales: Record<string, Locales> = {
@@ -156,7 +171,22 @@ export const locales: Record<string, Locales> = {
     dataWillBeLost: '删除后该字段的所有数据将丢失',
     sheetsUnit: '张表',
     fieldsUnit: '个字段',
-    recordsUnit: '条记录'
+    recordsUnit: '条记录',
+    selectSheet: '选择数据表',
+    selectDate: '选择日期',
+    startDate: '开始日期',
+    endDate: '结束日期',
+    singleDate: '单日期',
+    dateRange: '日期范围',
+    confirm: '确定',
+    syncData: '同步数据',
+    syncing: '同步中...',
+    syncSuccess: '同步成功',
+    syncFailed: '同步失败',
+    deletingRecords: '正在删除记录...',
+    insertingRecords: '正在插入记录...',
+    pleaseSelectDate: '请选择日期',
+    dataSource: '数据源'
   },
   'en-US': {
     title: 'Multi-table Management Assistant',
@@ -233,7 +263,22 @@ export const locales: Record<string, Locales> = {
     dataWillBeLost: 'All data in this field will be lost after deletion',
     sheetsUnit: 'sheets',
     fieldsUnit: 'fields',
-    recordsUnit: 'records'
+    recordsUnit: 'records',
+    selectSheet: 'Select Sheet',
+    selectDate: 'Select Date',
+    startDate: 'Start Date',
+    endDate: 'End Date',
+    singleDate: 'Single Date',
+    dateRange: 'Date Range',
+    confirm: 'Confirm',
+    syncData: 'Sync Data',
+    syncing: 'Syncing...',
+    syncSuccess: 'Sync Success',
+    syncFailed: 'Sync Failed',
+    deletingRecords: 'Deleting records...',
+    insertingRecords: 'Inserting records...',
+    pleaseSelectDate: 'Please select date',
+    dataSource: 'Data Source'
   },
   'ja-JP': {
     title: 'マルチテーブル管理アシスタント',
@@ -310,7 +355,22 @@ export const locales: Record<string, Locales> = {
     dataWillBeLost: '削除後、このフィールドのすべてのデータが失われます',
     sheetsUnit: 'シート',
     fieldsUnit: 'フィールド',
-    recordsUnit: 'レコード'
+    recordsUnit: 'レコード',
+    selectSheet: 'シートを選択',
+    selectDate: '日付を選択',
+    startDate: '開始日',
+    endDate: '終了日',
+    singleDate: '単一日付',
+    dateRange: '日付範囲',
+    confirm: '確定',
+    syncData: 'データ同期',
+    syncing: '同期中...',
+    syncSuccess: '同期成功',
+    syncFailed: '同期失敗',
+    deletingRecords: 'レコード削除中...',
+    insertingRecords: 'レコード挿入中...',
+    pleaseSelectDate: '日付を選択してください',
+    dataSource: 'データソース'
   }
 };
 
