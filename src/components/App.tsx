@@ -104,6 +104,11 @@ function App() {
       const backendData = result.data || [];
       addLog(`获取到 ${backendData.length} 条数据`);
 
+      // 检查数据量限制
+      if (backendData.length > 50000) {
+        throw new Error(`数据量过大(${backendData.length}条)，超过5万行限制，请缩小日期范围`);
+      }
+
       // 删除旧记录
       addLog('开始删除旧记录...');
       let deletedCount = 0;
