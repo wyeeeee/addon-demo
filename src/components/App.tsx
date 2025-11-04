@@ -2,9 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { initView } from 'dingtalk-docs-cool-app';
-import { Typography, Button, Select, DatePicker, Card, Space, message } from 'dingtalk-design-desktop';
+import { Typography, Button, Select, DatePicker, Card, Space, message, ConfigProvider } from 'dingtalk-design-desktop';
+import zhCN from 'dingtalk-design-desktop/es/locale/zh_CN';
 import { getLocale, type Locales } from './locales.ts';
 import './style.css';
+
+// 扩展中文语言包,补充月份名称
+const zhCNLocale = {
+  ...zhCN,
+  DatePicker: {
+    ...(zhCN.DatePicker || {}),
+    lang: {
+      ...(zhCN.DatePicker?.lang || {}),
+      shortMonths: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+      shortWeekDays: ['日', '一', '二', '三', '四', '五', '六'],
+    },
+  },
+};
 
 interface Sheet {
   id: string;
@@ -161,105 +175,107 @@ function App() {
   };
 
   return (
-    <div className='page'>
-      <div className='header'>
-        <Typography.Text strong>{locale.dataSource}</Typography.Text>
-      </div>
-      <div className='content'>
-        <Card>
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            <div>
-              <Typography.Text strong>{locale.selectSheet}</Typography.Text>
-              <Select
-                style={{ width: '100%', marginTop: '8px' }}
-                value={selectedSheetId}
-                onChange={(value) => setSelectedSheetId(value as string)}
-                placeholder={locale.pleaseSelectSheet}
-              >
-                {sheets.map((sheet) => (
-                  <Select.Option key={sheet.id} value={sheet.id}>
-                    {sheet.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <Typography.Text strong>{locale.selectDate}</Typography.Text>
-              <Select
-                style={{ width: '100%', marginTop: '8px' }}
-                value={dateMode}
-                onChange={(value) => setDateMode(value as 'single' | 'range')}
-              >
-                <Select.Option value="single">{locale.singleDate}</Select.Option>
-                <Select.Option value="range">{locale.dateRange}</Select.Option>
-              </Select>
-            </div>
-
-            {dateMode === 'single' ? (
+    <ConfigProvider locale={zhCNLocale as any}>
+      <div className='page'>
+        <div className='header'>
+          <Typography.Text strong>{locale.dataSource}</Typography.Text>
+        </div>
+        <div className='content'>
+          <Card>
+            <Space direction="vertical" style={{ width: '100%' }} size="large">
               <div>
-                <Typography.Text strong>{locale.singleDate}</Typography.Text>
-                <DatePicker
+                <Typography.Text strong>{locale.selectSheet}</Typography.Text>
+                <Select
                   style={{ width: '100%', marginTop: '8px' }}
-                  onChange={(date) => {
-                    if (date) {
-                      setSingleDate(formatDate(date));
-                    }
-                  }}
-                  placeholder={locale.pleaseSelectDate}
-                />
-              </div>
-            ) : (
-              <>
-                <div>
-                  <Typography.Text strong>{locale.startDate}</Typography.Text>
-                  <DatePicker
-                    style={{ width: '100%', marginTop: '8px' }}
-                    onChange={(date) => {
-                      if (date) {
-                        setStartDate(formatDate(date));
-                      }
-                    }}
-                    placeholder={locale.pleaseSelectDate}
-                  />
-                </div>
-                <div>
-                  <Typography.Text strong>{locale.endDate}</Typography.Text>
-                  <DatePicker
-                    style={{ width: '100%', marginTop: '8px' }}
-                    onChange={(date) => {
-                      if (date) {
-                        setEndDate(formatDate(date));
-                      }
-                    }}
-                    placeholder={locale.pleaseSelectDate}
-                  />
-                </div>
-              </>
-            )}
-
-            <Button
-              type="primary"
-              block
-              loading={loading}
-              onClick={handleSync}
-            >
-              {loading ? locale.syncing : locale.confirm}
-            </Button>
-
-            {logs.length > 0 && (
-              <Card size="small" title="日志">
-                <div style={{ maxHeight: '200px', overflow: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
-                  {logs.map((log, index) => (
-                    <div key={index} style={{ marginBottom: '4px' }}>{log}</div>
+                  value={selectedSheetId}
+                  onChange={(value) => setSelectedSheetId(value as string)}
+                  placeholder={locale.pleaseSelectSheet}
+                >
+                  {sheets.map((sheet) => (
+                    <Select.Option key={sheet.id} value={sheet.id}>
+                      {sheet.name}
+                    </Select.Option>
                   ))}
+                </Select>
+              </div>
+
+              <div>
+                <Typography.Text strong>{locale.selectDate}</Typography.Text>
+                <Select
+                  style={{ width: '100%', marginTop: '8px' }}
+                  value={dateMode}
+                  onChange={(value) => setDateMode(value as 'single' | 'range')}
+                >
+                  <Select.Option value="single">{locale.singleDate}</Select.Option>
+                  <Select.Option value="range">{locale.dateRange}</Select.Option>
+                </Select>
+              </div>
+
+              {dateMode === 'single' ? (
+                <div>
+                  <Typography.Text strong>{locale.singleDate}</Typography.Text>
+                  <DatePicker
+                    style={{ width: '100%', marginTop: '8px' }}
+                    onChange={(date) => {
+                      if (date) {
+                        setSingleDate(formatDate(date));
+                      }
+                    }}
+                    placeholder={locale.pleaseSelectDate}
+                  />
                 </div>
-              </Card>
-            )}
-          </Space>
-        </Card>
+              ) : (
+                <>
+                  <div>
+                    <Typography.Text strong>{locale.startDate}</Typography.Text>
+                    <DatePicker
+                      style={{ width: '100%', marginTop: '8px' }}
+                      onChange={(date) => {
+                        if (date) {
+                          setStartDate(formatDate(date));
+                        }
+                      }}
+                      placeholder={locale.pleaseSelectDate}
+                    />
+                  </div>
+                  <div>
+                    <Typography.Text strong>{locale.endDate}</Typography.Text>
+                    <DatePicker
+                      style={{ width: '100%', marginTop: '8px' }}
+                      onChange={(date) => {
+                        if (date) {
+                          setEndDate(formatDate(date));
+                        }
+                      }}
+                      placeholder={locale.pleaseSelectDate}
+                    />
+                  </div>
+                </>
+              )}
+
+              <Button
+                type="primary"
+                block
+                loading={loading}
+                onClick={handleSync}
+              >
+                {loading ? locale.syncing : locale.confirm}
+              </Button>
+
+              {logs.length > 0 && (
+                <Card size="small" title="日志">
+                  <div style={{ maxHeight: '200px', overflow: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
+                    {logs.map((log, index) => (
+                      <div key={index} style={{ marginBottom: '4px' }}>{log}</div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </Space>
+          </Card>
+        </div>
       </div>
-    </div>
+    </ConfigProvider>
   );
 }
 

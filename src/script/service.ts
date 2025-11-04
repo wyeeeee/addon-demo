@@ -290,17 +290,29 @@ async function deleteRecord(recordId: string, sheetId?: string) {
   }
 }
 
-// 批量删除记录
+// 批量删除记录（支持并行删除）
 async function deleteRecords(sheetId: string, recordIds: string[]) {
   const base = DingdocsScript.base;
   const sheet = base.getSheet(sheetId);
   if (!sheet) throw new Error('未找到数据表');
 
-  await sheet.deleteRecordsAsync(recordIds);
+  // 如果记录数量较少，直接删除
+  if (recordIds.length <= 100) {
+    await sheet.deleteRecordsAsync(recordIds);
+    return { success: true };
+  }
+
+  // 如果记录数量较多，使用并行批量删除（每批100条）
+  const deletePromises = [];
+  for (let i = 0; i < recordIds.length; i += 100) {
+    const batch = recordIds.slice(i, i + 100);
+    deletePromises.push(sheet.deleteRecordsAsync(batch));
+  }
+  await Promise.all(deletePromises);
   return { success: true };
 }
 
-// 批量插入记录（带字段映射）
+// 批量插入记录（带字段映射，支持并行插入）
 async function insertRecords(sheetId: string, backendData: any[]) {
   const base = DingdocsScript.base;
   const sheet = base.getSheet(sheetId);
@@ -328,7 +340,19 @@ async function insertRecords(sheetId: string, backendData: any[]) {
     return { fields };
   });
 
-  await sheet.insertRecordsAsync(recordsToInsert);
+  // 如果数据量较少，直接插入
+  if (recordsToInsert.length <= 500) {
+    await sheet.insertRecordsAsync(recordsToInsert);
+    return { success: true, count: recordsToInsert.length };
+  }
+
+  // 如果数据量较多，使用并行批量插入（每批500条）
+  const insertPromises = [];
+  for (let i = 0; i < recordsToInsert.length; i += 500) {
+    const batch = recordsToInsert.slice(i, i + 500);
+    insertPromises.push(sheet.insertRecordsAsync(batch));
+  }
+  await Promise.all(insertPromises);
   return { success: true, count: recordsToInsert.length };
 }
 
@@ -456,25 +480,39 @@ async function syncDataFromBackend(sheetId: string, startDate: string, endDate?:
     const backendData = result.data || [];
     console.log('获取到数据条数:', backendData.length);
 
-    // 删除表中所有现有记录（分批删除，每次最多100条）
+    // 删除表中所有现有记录（并行批量删除，提升性能）
     console.log('开始删除旧记录...');
+    const allRecordIds: string[] = [];
     let hasMore = true;
-    let deletedCount = 0;
+    let cursor: string | undefined = undefined;
+
+    // 第一步：一次性获取所有记录ID
     while (hasMore) {
-      const recordsResult = await sheet.getRecordsAsync({ pageSize: 100 });
+      const recordsResult = await sheet.getRecordsAsync({
+        pageSize: 100,
+        cursor
+      });
       if (recordsResult.records.length === 0) {
-        hasMore = false;
         break;
       }
 
-      const recordIds = recordsResult.records.map((r: any) => r.getId());
-      await sheet.deleteRecordsAsync(recordIds);
-      deletedCount += recordIds.length;
-      console.log(`已删除 ${deletedCount} 条记录`);
-
+      allRecordIds.push(...recordsResult.records.map((r: any) => r.getId()));
       hasMore = recordsResult.hasMore;
+      cursor = recordsResult.cursor;
     }
-    console.log(`删除完成，共删除 ${deletedCount} 条记录`);
+    console.log(`获取到 ${allRecordIds.length} 条待删除记录`);
+
+    // 第二步：并行删除所有记录（每批100条）
+    if (allRecordIds.length > 0) {
+      const deletePromises = [];
+      for (let i = 0; i < allRecordIds.length; i += 100) {
+        const batch = allRecordIds.slice(i, i + 100);
+        deletePromises.push(sheet.deleteRecordsAsync(batch));
+      }
+      await Promise.all(deletePromises);
+      console.log(`删除完成，共删除 ${allRecordIds.length} 条记录`);
+    }
+    const deletedCount = allRecordIds.length;
 
     // 获取表格字段映射
     const fields = sheet.getFields();
@@ -484,37 +522,39 @@ async function syncDataFromBackend(sheetId: string, startDate: string, endDate?:
     });
     console.log(`表格字段数: ${fields.length}`);
 
-    // 转换并插入新数据（分批插入，每次最多100条，降低批次大小提高稳定性）
-    const batchSize = 100;
-    let insertedCount = 0;
-
+    // 转换并插入新数据（并行批量插入，每批500条，提升性能）
+    const batchSize = 500;
     console.log('开始插入新记录...');
-    for (let i = 0; i < backendData.length; i += batchSize) {
-      const batch = backendData.slice(i, i + batchSize);
-      const recordsToInsert = batch.map((item: any) => {
-        const fields: Record<string, any> = {};
 
-        // 遍历字段映射，将后端数据转换为表格字段
-        for (const [backendKey, sheetFieldName] of Object.entries(FIELD_MAPPING)) {
-          if (fieldMap.has(sheetFieldName) && item[backendKey] !== undefined) {
-            let value = item[backendKey];
+    // 第一步：预先转换所有数据
+    const allRecordsToInsert = backendData.map((item: any) => {
+      const fields: Record<string, any> = {};
 
-            // 日期字段特殊处理：转换为时间戳
-            if (backendKey === 'date' && value) {
-              value = new Date(value).getTime();
-            }
+      // 遍历字段映射，将后端数据转换为表格字段
+      for (const [backendKey, sheetFieldName] of Object.entries(FIELD_MAPPING)) {
+        if (fieldMap.has(sheetFieldName) && item[backendKey] !== undefined) {
+          let value = item[backendKey];
 
-            fields[sheetFieldName] = value;
+          // 日期字段特殊处理：转换为时间戳
+          if (backendKey === 'date' && value) {
+            value = new Date(value).getTime();
           }
+
+          fields[sheetFieldName] = value;
         }
+      }
 
-        return { fields };
-      });
+      return { fields };
+    });
 
-      await sheet.insertRecordsAsync(recordsToInsert);
-      insertedCount += recordsToInsert.length;
-      console.log(`已插入 ${insertedCount}/${backendData.length} 条记录`);
+    // 第二步：并行插入所有记录（每批500条）
+    const insertPromises = [];
+    for (let i = 0; i < allRecordsToInsert.length; i += batchSize) {
+      const batch = allRecordsToInsert.slice(i, i + batchSize);
+      insertPromises.push(sheet.insertRecordsAsync(batch));
     }
+    await Promise.all(insertPromises);
+    const insertedCount = allRecordsToInsert.length;
     console.log(`插入完成，共插入 ${insertedCount} 条记录`);
 
     return {
@@ -544,5 +584,6 @@ DingdocsScript.registerScript('deleteRecord', deleteRecord);
 DingdocsScript.registerScript('deleteRecords', deleteRecords);
 DingdocsScript.registerScript('insertRecords', insertRecords);
 DingdocsScript.registerScript('getDocumentInfo', getDocumentInfo);
+DingdocsScript.registerScript('syncDataFromBackend', syncDataFromBackend);
 
 export {};
