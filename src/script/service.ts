@@ -312,12 +312,136 @@ async function deleteRecords(sheetId: string, recordIds: string[]) {
   return { success: true };
 }
 
+// 同步表格字段,确保与后端数据字段一致
+async function syncSheetFields(sheetId: string) {
+  const base = DingdocsScript.base;
+  const sheet = base.getSheet(sheetId);
+  if (!sheet) throw new Error('未找到数据表');
+
+  const fields = sheet.getFields();
+  const existingFieldNames = new Set<string>();
+  let primaryField: any = null;
+
+  // 收集现有字段名称并找到主键字段
+  fields.forEach((field: any) => {
+    existingFieldNames.add(field.getName());
+    if (field.isPrimary?.()) {
+      primaryField = field;
+    }
+  });
+
+  // 目标字段名称列表（从FIELD_MAPPING获取,保持顺序）
+  const targetFieldNames = Object.values(FIELD_MAPPING);
+  const targetFieldNamesSet = new Set(targetFieldNames);
+
+  // 第一个目标字段应该是主键字段
+  const expectedPrimaryFieldName = targetFieldNames[0];
+
+  // 1. 处理主键字段：如果主键字段名称不匹配,重命名主键字段
+  if (primaryField && primaryField.getName() !== expectedPrimaryFieldName) {
+    console.log(`重命名主键字段: ${primaryField.getName()} -> ${expectedPrimaryFieldName}`);
+    primaryField.setName(expectedPrimaryFieldName);
+    existingFieldNames.delete(primaryField.getName());
+    existingFieldNames.add(expectedPrimaryFieldName);
+  }
+
+  // 2. 删除多余的非主键字段
+  for (const field of fields) {
+    const fieldName = field.getName();
+    const isPrimary = field.isPrimary?.();
+
+    if (!isPrimary && !targetFieldNamesSet.has(fieldName)) {
+      console.log(`删除多余字段: ${fieldName}`);
+      sheet.deleteField(field.getId());
+      existingFieldNames.delete(fieldName);
+    }
+  }
+
+  // 3. 添加缺少的字段
+  for (const sheetFieldName of targetFieldNames) {
+    if (!existingFieldNames.has(sheetFieldName)) {
+      console.log(`添加缺少字段: ${sheetFieldName}`);
+      // 根据字段名称推断字段类型和属性
+      const fieldConfig = inferFieldTypeAndProperty(sheetFieldName);
+      sheet.insertField({
+        name: sheetFieldName,
+        type: fieldConfig.type,
+        property: fieldConfig.property
+      });
+    }
+  }
+
+  return { success: true };
+}
+
+// 根据字段名称推断字段类型和属性配置
+function inferFieldTypeAndProperty(fieldName: string): { type: any; property?: any } {
+  // 日期相关
+  if (fieldName.includes('日期') || fieldName.includes('时间')) {
+    return { type: 'date' };
+  }
+
+  // 数值相关 - 需要区分整数和小数
+  if (fieldName.includes('数') || fieldName.includes('量') || fieldName.includes('金额') ||
+      fieldName.includes('成本') || fieldName.includes('价格') || fieldName.includes('ROI') ||
+      fieldName.includes('率') || fieldName.includes('占比') || fieldName.includes('费用') ||
+      fieldName.includes('营业额') || fieldName.includes('停留时长')) {
+
+    // 百分比类型字段(各种率、占比) - 保留4位小数
+    if (fieldName.includes('率') || fieldName.includes('占比')) {
+      return {
+        type: 'number',
+        property: {
+          formatter: 'FLOAT_4'  // 保留4位小数
+        }
+      };
+    }
+
+    // 金额类型字段 - 保留2位小数
+    if (fieldName.includes('金额') || fieldName.includes('成本') ||
+        fieldName.includes('价格') || fieldName.includes('费用') ||
+        fieldName.includes('营业额')) {
+      return {
+        type: 'number',
+        property: {
+          formatter: 'FLOAT_2'  // 保留2位小数
+        }
+      };
+    }
+
+    // ROI - 保留2位小数
+    if (fieldName.includes('ROI')) {
+      return {
+        type: 'number',
+        property: {
+          formatter: 'FLOAT_2'
+        }
+      };
+    }
+
+    // 其他数值(如件数、人数等整数) - 整数格式
+    return {
+      type: 'number',
+      property: {
+        formatter: 'INT'  // 整数格式
+      }
+    };
+  }
+
+  // 默认为文本
+  return { type: 'text' };
+}
+
 // 批量插入记录（带字段映射，支持并行插入）
 async function insertRecords(sheetId: string, backendData: any[]) {
   const base = DingdocsScript.base;
   const sheet = base.getSheet(sheetId);
   if (!sheet) throw new Error('未找到数据表');
 
+  // 在插入数据前,先同步字段
+  await syncSheetFields(sheetId);
+
+  // 重新获取字段映射（因为字段可能已变更）
   const fields = sheet.getFields();
   const fieldMap = new Map<string, any>();
   fields.forEach((field: any) => {
