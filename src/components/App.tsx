@@ -94,7 +94,7 @@ function App() {
 
     try {
       // 构建API URL
-      let apiUrl = 'http://localhost:8080/api/product-daily-view';
+      let apiUrl = 'http://155.94.172.181:7675/api/product-daily-view';
       if (dateMode === 'range') {
         apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
       } else {
