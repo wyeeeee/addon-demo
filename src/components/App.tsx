@@ -29,6 +29,7 @@ interface Sheet {
 function App() {
   const [locale, setLocale] = useState<Locales>(getLocale('zh-CN'));
   const [loading, setLoading] = useState<boolean>(false);
+  const [permissionReady, setPermissionReady] = useState<boolean>(false);
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
   const [dateRange, setDateRange] = useState<[any, any] | null>(null);
@@ -38,15 +39,24 @@ function App() {
     initView({
       onReady: async () => {
         try {
+          console.log('[初始化] 开始配置权限...');
           // 配置钉钉权限
           await configDingdocsPermission();
+          console.log('[初始化] 权限配置完成');
+
+          // 标记权限已就绪
+          setPermissionReady(true);
 
           const currentLocale = await Dingdocs.base.host.getLocale();
           setLocale(getLocale(currentLocale));
         } catch (e) {
-          console.warn('初始化失败:', e);
+          console.error('[初始化] 权限配置失败:', e);
+          message.error('权限配置失败，请刷新页面重试');
+          return;
         }
 
+        // 权限配置成功后才加载数据表
+        console.log('[初始化] 开始加载数据表...');
         await loadSheets();
       },
     });
@@ -54,13 +64,22 @@ function App() {
   }, []);
 
   const loadSheets = async () => {
+    // 确保权限已配置
+    if (!permissionReady) {
+      console.warn('[加载数据表] 权限未就绪，跳过加载');
+      return;
+    }
+
     try {
+      console.log('[加载数据表] 开始获取数据表列表...');
       const sheetList = await Dingdocs.script.run('getAllSheets');
+      console.log('[加载数据表] 获取到数据表:', sheetList.length, '个');
       setSheets(sheetList);
       if (sheetList.length > 0 && !selectedSheetId) {
         setSelectedSheetId(sheetList[0].id);
       }
     } catch (error: any) {
+      console.error('[加载数据表] 失败:', error);
       message.error(`${locale.operationFailed}: ${error.message}`);
     }
   };
@@ -72,6 +91,12 @@ function App() {
   };
 
   const handleSync = async () => {
+    // 确保权限已配置
+    if (!permissionReady) {
+      message.error('权限未就绪，请稍后重试');
+      return;
+    }
+
     if (!selectedSheetId) {
       message.warning(locale.pleaseSelectSheet);
       return;
@@ -197,10 +222,11 @@ function App() {
                 size="large"
                 block
                 loading={loading}
+                disabled={!permissionReady || loading}
                 onClick={handleSync}
                 style={{ height: '44px', fontSize: '16px', fontWeight: 500 }}
               >
-                {loading ? `⏳ ${locale.syncing}` : `🚀 ${locale.syncData}`}
+                {!permissionReady ? '⏳ 正在初始化...' : loading ? `⏳ ${locale.syncing}` : `🚀 ${locale.syncData}`}
               </Button>
 
               {logs.length > 0 && (

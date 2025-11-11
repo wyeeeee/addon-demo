@@ -1,6 +1,6 @@
 /*global DingdocsScript*/
 
-import { BATCH_SIZES, FIELD_MAPPING } from './constants.ts';
+import { BATCH_SIZES, FIELD_MAPPING, SYNC_VERIFICATION } from './constants.ts';
 import { API_CONFIG } from '../../config/api.ts';
 
 /**
@@ -53,14 +53,15 @@ export async function syncDataFromBackend(sheetId: string, startDate: string, en
 
     // 增量同步：比对并更新数据
     console.log('开始增量同步...');
-    const syncResult = await incrementalSync(sheet, backendData);
+    const syncResult = await incrementalSyncWithVerification(sheet, backendData);
     console.log(`同步完成: 新增${syncResult.insertedCount}条，删除${syncResult.deletedCount}条`);
 
     return {
       success: true,
       deletedCount: syncResult.deletedCount,
       insertedCount: syncResult.insertedCount,
-      message: `增量同步完成: 新增${syncResult.insertedCount}条，删除${syncResult.deletedCount}条`
+      retryCount: syncResult.retryCount,
+      message: `增量同步完成: 新增${syncResult.insertedCount}条，删除${syncResult.deletedCount}条${syncResult.retryCount > 0 ? `，重试${syncResult.retryCount}次` : ''}`
     };
   } catch (error: any) {
     const errorMsg = error?.message || error?.toString() || '未知错误';
@@ -223,4 +224,117 @@ async function getAllRecords(sheet: any): Promise<any[]> {
   }
 
   return allRecords;
+}
+
+/**
+ * 延迟函数
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 带校验的增量同步：执行同步后校验数据一致性，必要时重试
+ */
+async function incrementalSyncWithVerification(
+  sheet: any,
+  backendData: any[]
+): Promise<{ insertedCount: number; deletedCount: number; retryCount: number }> {
+  let totalInsertedCount = 0;
+  let totalDeletedCount = 0;
+  let retryCount = 0;
+
+  // 构建后端数据的唯一标识集合（用于校验）
+  const backendKeySet = new Set<string>();
+  backendData.forEach((item: any) => {
+    const dateStr = item.date.split('T')[0];
+    const key = generateRecordKey(dateStr, String(item.product_id));
+    backendKeySet.add(key);
+  });
+
+  const expectedRecordCount = backendKeySet.size;
+  console.log(`期望的记录总数: ${expectedRecordCount}`);
+
+  // 第一次执行同步
+  console.log('执行初始同步...');
+  const initialResult = await incrementalSync(sheet, backendData);
+  totalInsertedCount += initialResult.insertedCount;
+  totalDeletedCount += initialResult.deletedCount;
+
+  // 等待服务器处理
+  console.log(`等待${SYNC_VERIFICATION.VERIFICATION_DELAY_MS}ms，让服务器处理数据...`);
+  await delay(SYNC_VERIFICATION.VERIFICATION_DELAY_MS);
+
+  // 开始校验和重试循环
+  while (retryCount < SYNC_VERIFICATION.MAX_RETRY_COUNT) {
+    console.log(`\n第${retryCount + 1}次校验数据一致性...`);
+
+    // 重新获取表格数据进行校验
+    const currentRecords = await getAllRecords(sheet);
+    const currentKeySet = new Set<string>();
+
+    currentRecords.forEach((record: any) => {
+      const dateValue = record.getCellValue('日期');
+      const productId = record.getCellValue('商品ID');
+
+      if (dateValue && productId) {
+        const dateStr = new Date(dateValue).toISOString().split('T')[0];
+        const key = generateRecordKey(dateStr, String(productId));
+        currentKeySet.add(key);
+      }
+    });
+
+    const actualRecordCount = currentKeySet.size;
+    console.log(`当前表格记录数: ${actualRecordCount}，期望记录数: ${expectedRecordCount}`);
+
+    // 检查数据是否一致
+    if (actualRecordCount === expectedRecordCount) {
+      // 进一步检查是否所有后端数据都存在
+      let allKeysMatch = true;
+      for (const key of backendKeySet) {
+        if (!currentKeySet.has(key)) {
+          allKeysMatch = false;
+          console.log(`缺失记录键: ${key}`);
+          break;
+        }
+      }
+
+      if (allKeysMatch) {
+        console.log('✓ 数据校验通过，记录数一致且所有数据完整');
+        break;
+      } else {
+        console.log('✗ 记录数相同但存在数据不匹配，需要重试');
+      }
+    } else {
+      const diff = expectedRecordCount - actualRecordCount;
+      console.log(`✗ 记录数不一致，差异: ${diff}条`);
+    }
+
+    // 如果已达到最大重试次数，报错退出
+    if (retryCount >= SYNC_VERIFICATION.MAX_RETRY_COUNT - 1) {
+      const errorMsg = `数据同步校验失败: 经过${SYNC_VERIFICATION.MAX_RETRY_COUNT}次重试后，表格记录数(${actualRecordCount})仍与期望记录数(${expectedRecordCount})不一致`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    // 执行重试
+    retryCount++;
+    console.log(`\n准备第${retryCount}次重试，等待${SYNC_VERIFICATION.RETRY_DELAY_MS}ms...`);
+    await delay(SYNC_VERIFICATION.RETRY_DELAY_MS);
+
+    console.log(`开始第${retryCount}次增量同步重试...`);
+    const retryResult = await incrementalSync(sheet, backendData);
+    totalInsertedCount += retryResult.insertedCount;
+    totalDeletedCount += retryResult.deletedCount;
+    console.log(`重试完成: 新增${retryResult.insertedCount}条，删除${retryResult.deletedCount}条`);
+
+    // 等待服务器处理
+    await delay(SYNC_VERIFICATION.VERIFICATION_DELAY_MS);
+  }
+
+  return {
+    insertedCount: totalInsertedCount,
+    deletedCount: totalDeletedCount,
+    retryCount
+  };
 }
