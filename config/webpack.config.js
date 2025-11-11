@@ -226,6 +226,10 @@ module.exports = function (webpackEnv) {
     target: ['browserslist'],
     // Webpack noise constrained to errors and warnings
     stats: 'errors-warnings',
+    // 忽略 TypeScript source map 警告
+    ignoreWarnings: [
+      /Failed to parse source map.*typescript\.js\.map/,
+    ],
     mode: isEnvProduction ? 'production' : isEnvDevelopment && 'development',
     // Stop compilation early in production
     bail: isEnvProduction,
@@ -262,7 +266,8 @@ module.exports = function (webpackEnv) {
       // webpack uses `publicPath` to determine where the app is being served from.
       // It requires a trailing slash, or the file assets will get an incorrect path.
       // We inferred the "public path" (such as / or /my-project) from homepage.
-      publicPath: paths.publicUrlOrPath,
+      // 钉钉文档插件需要使用相对路径
+      publicPath: isEnvProduction ? './' : paths.publicUrlOrPath,
       // Point sourcemap entries to original disk location (format as URL on Windows)
       devtoolModuleFilenameTemplate: isEnvProduction
         ? info =>
@@ -408,7 +413,7 @@ module.exports = function (webpackEnv) {
           enforce: 'pre',
           exclude: [
             /@babel(?:\/|\\{1,2})runtime/,
-            /node_modules\/typescript\//,
+            /node_modules\/typescript/,
             /node_modules\/@oclif\//
           ],
           test: /\.(js|mjs|jsx|ts|tsx|css)$/,

@@ -19,7 +19,7 @@ export async function syncDataFromBackend(sheetId: string, startDate: string, en
     }
 
     // 构建API URL
-    let apiUrl = 'http://155.94.172.181:7675/api/product-daily-view';
+    let apiUrl = 'https://xipiapi.moonmark.chat/api/product-daily-view';
     if (endDate) {
       apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
     } else {
