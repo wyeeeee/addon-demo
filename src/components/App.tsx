@@ -6,7 +6,6 @@ import { Typography, Button, Select, DatePicker, Card, Space, message, ConfigPro
 import zhCN from 'dingtalk-design-desktop/es/locale/zh_CN';
 import { getLocale, type Locales } from './locales.ts';
 import { configDingdocsPermission } from '../utils/permission.ts';
-import { API_CONFIG } from '../config/api.ts';
 import './style.css';
 
 // 扩展中文语言包
@@ -95,69 +94,18 @@ function App() {
     addLog(`日期: ${dateText}`);
 
     try {
-      // 构建API URL
-      let apiUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PRODUCT_DAILY_VIEW}`;
-      if (startDate === endDate) {
-        apiUrl += `?date=${startDate}`;
-      } else {
-        apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
-      }
-      addLog(`请求API: ${apiUrl}`);
+      // 调用service层的增量同步方法
+      addLog('正在请求后端数据...');
 
-      // 获取后端数据
-      const response = await fetch(apiUrl);
-      addLog(`API响应: ${response.status}`);
+      const result = await Dingdocs.script.run(
+        'syncDataFromBackend',
+        selectedSheetId,
+        startDate,
+        startDate === endDate ? undefined : endDate
+      );
 
-      if (!response.ok) {
-        throw new Error(`HTTP错误: ${response.status}`);
-      }
-
-      const result = await response.json();
-      if (result.code !== 0) {
-        throw new Error(result.msg || '获取数据失败');
-      }
-
-      const backendData = result.data || [];
-      addLog(`获取到 ${backendData.length} 条数据`);
-
-      // 检查数据量限制
-      if (backendData.length > 50000) {
-        throw new Error(`数据量过大(${backendData.length}条)，超过5万行限制，请缩小日期范围`);
-      }
-
-      // 删除旧记录
-      addLog('开始删除旧记录...');
-      let deletedCount = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        const recordsResult = await Dingdocs.script.run('getRecords', selectedSheetId, 100);
-        if (recordsResult.records.length === 0) {
-          break;
-        }
-
-        const recordIds = recordsResult.records.map((r: any) => r.id);
-        await Dingdocs.script.run('deleteRecords', selectedSheetId, recordIds);
-        deletedCount += recordIds.length;
-        addLog(`已删除 ${deletedCount} 条`);
-
-        hasMore = recordsResult.hasMore;
-      }
-
-      // 插入新记录
-      addLog('开始插入新记录...');
-      let insertedCount = 0;
-      const batchSize = 100;
-
-      for (let i = 0; i < backendData.length; i += batchSize) {
-        const batch = backendData.slice(i, i + batchSize);
-        await Dingdocs.script.run('insertRecords', selectedSheetId, batch);
-        insertedCount += batch.length;
-        addLog(`已插入 ${insertedCount}/${backendData.length} 条`);
-      }
-
-      addLog(`同步完成！删除${deletedCount}条，插入${insertedCount}条`);
-      message.success(`${locale.syncSuccess}！删除${deletedCount}条，插入${insertedCount}条`);
+      addLog(`✅ ${result.message}`);
+      message.success(`${locale.syncSuccess}！${result.message}`);
     } catch (error: any) {
       const errorMsg = error?.message || JSON.stringify(error) || '未知错误';
       addLog(`同步失败: ${errorMsg}`);
