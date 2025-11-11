@@ -5,6 +5,8 @@ import { initView } from 'dingtalk-docs-cool-app';
 import { Typography, Button, Select, DatePicker, Card, Space, message, ConfigProvider } from 'dingtalk-design-desktop';
 import zhCN from 'dingtalk-design-desktop/es/locale/zh_CN';
 import { getLocale, type Locales } from './locales.ts';
+import { configDingdocsPermission } from '../utils/permission.ts';
+import { API_CONFIG } from '../config/api.ts';
 import './style.css';
 
 // 扩展中文语言包,补充月份名称
@@ -40,10 +42,13 @@ function App() {
     initView({
       onReady: async () => {
         try {
+          // 配置钉钉权限
+          await configDingdocsPermission();
+
           const currentLocale = await Dingdocs.base.host.getLocale();
           setLocale(getLocale(currentLocale));
         } catch (e) {
-          console.warn('获取语言设置失败，使用默认中文');
+          console.warn('初始化失败:', e);
         }
 
         await loadSheets();
@@ -94,7 +99,7 @@ function App() {
 
     try {
       // 构建API URL
-      let apiUrl = 'https://xipiapi.moonmark.chat/api/product-daily-view';
+      let apiUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PRODUCT_DAILY_VIEW}`;
       if (dateMode === 'range') {
         apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
       } else {

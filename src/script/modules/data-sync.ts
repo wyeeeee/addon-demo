@@ -1,6 +1,7 @@
 /*global DingdocsScript*/
 
 import { BATCH_SIZES, FIELD_MAPPING } from './constants.ts';
+import { API_CONFIG } from '../../config/api.ts';
 
 /**
  * 数据同步模块
@@ -19,7 +20,7 @@ export async function syncDataFromBackend(sheetId: string, startDate: string, en
     }
 
     // 构建API URL
-    let apiUrl = 'https://xipiapi.moonmark.chat/api/product-daily-view';
+    let apiUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PRODUCT_DAILY_VIEW}`;
     if (endDate) {
       apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
     } else {
