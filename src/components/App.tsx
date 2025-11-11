@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { initView } from 'dingtalk-docs-cool-app';
-import { Typography, Button, Select, DatePicker, Card, Space, message, ConfigProvider } from 'dingtalk-design-desktop';
+import { Typography, Button, Select, DatePicker, Card, Space, message, ConfigProvider, Divider } from 'dingtalk-design-desktop';
 import zhCN from 'dingtalk-design-desktop/es/locale/zh_CN';
 import { getLocale, type Locales } from './locales.ts';
 import { configDingdocsPermission } from '../utils/permission.ts';
 import { API_CONFIG } from '../config/api.ts';
 import './style.css';
 
-// 扩展中文语言包,补充月份名称
+// 扩展中文语言包
 const zhCNLocale = {
   ...zhCN,
   DatePicker: {
@@ -32,10 +32,7 @@ function App() {
   const [loading, setLoading] = useState<boolean>(false);
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
-  const [dateMode, setDateMode] = useState<'single' | 'range'>('single');
-  const [singleDate, setSingleDate] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
 
   useEffect(() => {
@@ -81,29 +78,29 @@ function App() {
       return;
     }
 
-    if (dateMode === 'single' && !singleDate) {
-      message.warning(locale.pleaseSelectDate);
-      return;
-    }
-
-    if (dateMode === 'range' && (!startDate || !endDate)) {
+    if (!dateRange || !dateRange[0]) {
       message.warning(locale.pleaseSelectDate);
       return;
     }
 
     setLogs([]);
     setLoading(true);
+
+    const startDate = formatDate(dateRange[0]);
+    const endDate = dateRange[1] ? formatDate(dateRange[1]) : startDate;
+    const dateText = startDate === endDate ? startDate : `${startDate} 至 ${endDate}`;
+
     addLog('开始同步数据...');
-    addLog(`数据表ID: ${selectedSheetId}`);
-    addLog(`日期: ${dateMode === 'single' ? singleDate : `${startDate} 至 ${endDate}`}`);
+    addLog(`数据表: ${sheets.find(s => s.id === selectedSheetId)?.name || selectedSheetId}`);
+    addLog(`日期: ${dateText}`);
 
     try {
       // 构建API URL
       let apiUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PRODUCT_DAILY_VIEW}`;
-      if (dateMode === 'range') {
-        apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
+      if (startDate === endDate) {
+        apiUrl += `?date=${startDate}`;
       } else {
-        apiUrl += `?date=${singleDate}`;
+        apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
       }
       addLog(`请求API: ${apiUrl}`);
 
@@ -183,14 +180,19 @@ function App() {
     <ConfigProvider locale={zhCNLocale as any}>
       <div className='page'>
         <div className='header'>
-          <Typography.Text strong>{locale.dataSource}</Typography.Text>
+          <Typography.Title level={4} style={{ margin: 0, color: '#1890ff' }}>
+            📊 {locale.title}
+          </Typography.Title>
         </div>
         <div className='content'>
-          <Card>
-            <Space direction="vertical" style={{ width: '100%' }} size="large">
+          <Card bordered={false} style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
               <div>
-                <Typography.Text strong>{locale.selectSheet}</Typography.Text>
+                <Typography.Text strong style={{ fontSize: '14px', color: '#262626' }}>
+                  📋 {locale.selectSheet}
+                </Typography.Text>
                 <Select
+                  size="large"
                   style={{ width: '100%', marginTop: '8px' }}
                   value={selectedSheetId}
                   onChange={(value) => setSelectedSheetId(value as string)}
@@ -205,76 +207,84 @@ function App() {
               </div>
 
               <div>
-                <Typography.Text strong>{locale.selectDate}</Typography.Text>
-                <Select
-                  style={{ width: '100%', marginTop: '8px' }}
-                  value={dateMode}
-                  onChange={(value) => setDateMode(value as 'single' | 'range')}
-                >
-                  <Select.Option value="single">{locale.singleDate}</Select.Option>
-                  <Select.Option value="range">{locale.dateRange}</Select.Option>
-                </Select>
-              </div>
-
-              {dateMode === 'single' ? (
-                <div>
-                  <Typography.Text strong>{locale.singleDate}</Typography.Text>
+                <Typography.Text strong style={{ fontSize: '14px', color: '#262626' }}>
+                  📅 {locale.selectDate}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
+                  (选择单日或日期范围)
+                </Typography.Text>
+                <Space.Compact style={{ width: '100%', marginTop: '8px' }}>
                   <DatePicker
-                    style={{ width: '100%', marginTop: '8px' }}
+                    size="large"
+                    style={{ width: '50%' }}
+                    value={dateRange?.[0]}
                     onChange={(date) => {
                       if (date) {
-                        setSingleDate(formatDate(date));
+                        setDateRange([date, dateRange?.[1] || date]);
+                      } else {
+                        setDateRange(null);
                       }
                     }}
-                    placeholder={locale.pleaseSelectDate}
+                    placeholder={locale.startDate}
                   />
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <Typography.Text strong>{locale.startDate}</Typography.Text>
-                    <DatePicker
-                      style={{ width: '100%', marginTop: '8px' }}
-                      onChange={(date) => {
-                        if (date) {
-                          setStartDate(formatDate(date));
-                        }
-                      }}
-                      placeholder={locale.pleaseSelectDate}
-                    />
-                  </div>
-                  <div>
-                    <Typography.Text strong>{locale.endDate}</Typography.Text>
-                    <DatePicker
-                      style={{ width: '100%', marginTop: '8px' }}
-                      onChange={(date) => {
-                        if (date) {
-                          setEndDate(formatDate(date));
-                        }
-                      }}
-                      placeholder={locale.pleaseSelectDate}
-                    />
-                  </div>
-                </>
-              )}
+                  <DatePicker
+                    size="large"
+                    style={{ width: '50%' }}
+                    value={dateRange?.[1] || dateRange?.[0]}
+                    onChange={(date) => {
+                      if (date && dateRange?.[0]) {
+                        setDateRange([dateRange[0], date]);
+                      }
+                    }}
+                    placeholder={locale.endDate}
+                    disabled={!dateRange?.[0]}
+                  />
+                </Space.Compact>
+              </div>
+
+              <Divider style={{ margin: '8px 0' }} />
 
               <Button
                 type="primary"
+                size="large"
                 block
                 loading={loading}
                 onClick={handleSync}
+                style={{ height: '44px', fontSize: '16px', fontWeight: 500 }}
               >
-                {loading ? locale.syncing : locale.confirm}
+                {loading ? `⏳ ${locale.syncing}` : `🚀 ${locale.syncData}`}
               </Button>
 
               {logs.length > 0 && (
-                <Card size="small" title="日志">
-                  <div style={{ maxHeight: '200px', overflow: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
-                    {logs.map((log, index) => (
-                      <div key={index} style={{ marginBottom: '4px' }}>{log}</div>
-                    ))}
-                  </div>
-                </Card>
+                <>
+                  <Divider style={{ margin: '8px 0' }} />
+                  <Card
+                    size="small"
+                    title={<span style={{ fontSize: '13px' }}>📝 同步日志</span>}
+                    style={{ backgroundColor: '#fafafa' }}
+                  >
+                    <div style={{
+                      maxHeight: '240px',
+                      overflow: 'auto',
+                      fontSize: '12px',
+                      fontFamily: 'Consolas, Monaco, monospace',
+                      lineHeight: '1.6'
+                    }}>
+                      {logs.map((log, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            marginBottom: '4px',
+                            padding: '2px 0',
+                            color: log.includes('失败') || log.includes('错误') ? '#ff4d4f' : '#595959'
+                          }}
+                        >
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </>
               )}
             </Space>
           </Card>

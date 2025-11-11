@@ -97,7 +97,7 @@ export interface Locales {
 
 export const locales: Record<string, Locales> = {
   'zh-CN': {
-    title: 'AI表格管理助手',
+    title: '天猫三组数据同步',
     documentInfo: '文档信息',
     sheetManagement: '数据表管理',
     fieldManagement: '字段管理',
