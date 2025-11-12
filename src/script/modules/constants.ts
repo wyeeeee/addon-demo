@@ -71,7 +71,7 @@ export const FIELD_MAPPING: Record<string, string> = {
  * 批量操作的批次大小常量
  */
 export const BATCH_SIZES = {
-  INSERT_RECORDS: 500,  // 插入记录批次大小
+  INSERT_RECORDS: 100,  // 插入记录批次大小（降低以避免超时）
   DELETE_RECORDS: 100,  // 删除记录批次大小
   GET_RECORDS: 100      // 获取记录批次大小
 } as const;

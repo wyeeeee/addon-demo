@@ -30,7 +30,11 @@ import {
 } from './modules/record-operations.ts';
 
 import {
-  syncDataFromBackend
+  fetchBackendData,
+  getSheetRecords,
+  batchInsertRecords,
+  batchDeleteRecords,
+  getFieldMapping
 } from './modules/data-sync.ts';
 
 // 注册所有方法供UI层调用
@@ -48,6 +52,12 @@ DingdocsScript.registerScript('deleteRecord', deleteRecord);
 DingdocsScript.registerScript('deleteRecords', deleteRecords);
 DingdocsScript.registerScript('insertRecords', insertRecords);
 DingdocsScript.registerScript('getDocumentInfo', getDocumentInfo);
-DingdocsScript.registerScript('syncDataFromBackend', syncDataFromBackend);
+
+// 数据同步相关方法
+DingdocsScript.registerScript('fetchBackendData', fetchBackendData);
+DingdocsScript.registerScript('getSheetRecords', getSheetRecords);
+DingdocsScript.registerScript('batchInsertRecords', batchInsertRecords);
+DingdocsScript.registerScript('batchDeleteRecords', batchDeleteRecords);
+DingdocsScript.registerScript('getFieldMapping', getFieldMapping);
 
 export {};

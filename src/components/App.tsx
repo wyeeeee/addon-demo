@@ -102,21 +102,144 @@ function App() {
     addLog(`日期: ${dateText}`);
 
     try {
-      // 调用service层的增量同步方法
+      // 第一步：获取后端数据
       addLog('正在请求后端数据...');
+      const backendData = await Dingdocs.script.run('fetchBackendData', startDate, startDate === endDate ? undefined : endDate);
+      addLog(`获取到后端数据: ${backendData.length} 条`);
 
-      const result = await Dingdocs.script.run(
-        'syncDataFromBackend',
-        selectedSheetId,
-        startDate,
-        startDate === endDate ? undefined : endDate
-      );
+      // 第二步：获取表格现有数据
+      addLog('正在获取表格现有数据...');
+      const sheetRecords = await Dingdocs.script.run('getSheetRecords', selectedSheetId);
+      addLog(`获取到表格数据: ${sheetRecords.length} 条`);
 
-      addLog(`✅ ${result.message}`);
-      message.success(`${locale.syncSuccess}！${result.message}`);
+      // 如果后端和表格都没有数据，直接返回
+      if (backendData.length === 0 && sheetRecords.length === 0) {
+        addLog('✅ 后端和表格都没有数据，无需同步');
+        message.info('没有需要同步的数据');
+        return;
+      }
+
+      // 第三步：获取字段映射
+      const fieldMappingResult = await Dingdocs.script.run('getFieldMapping', selectedSheetId);
+      const { fieldMapping } = fieldMappingResult;
+
+      // 第四步：在 UI 层计算需要插入和删除的记录
+      addLog('正在计算数据差异...');
+
+      // 构建后端数据的唯一标识集合
+      const backendKeySet = new Set<string>();
+      const backendDataMap = new Map<string, any>();
+
+      backendData.forEach((item: any) => {
+        const dateStr = item.date.split('T')[0];
+        const key = `${dateStr}_${item.product_id}`;
+        backendKeySet.add(key);
+        backendDataMap.set(key, item);
+      });
+
+      // 构建表格数据的唯一标识映射
+      const existingKeyMap = new Map<string, any>();
+
+      sheetRecords.forEach((record: any) => {
+        const dateValue = record.fields['日期'];
+        const productId = record.fields['商品ID'];
+
+        if (dateValue && productId) {
+          const dateStr = new Date(dateValue).toISOString().split('T')[0];
+          const key = `${dateStr}_${productId}`;
+          existingKeyMap.set(key, record);
+        }
+      });
+
+      // 找出需要删除的记录
+      const recordsToDelete: string[] = [];
+      existingKeyMap.forEach((record, key) => {
+        if (!backendKeySet.has(key)) {
+          recordsToDelete.push(record.id);
+        }
+      });
+
+      // 找出需要新增的记录
+      const recordsToInsert: any[] = [];
+      backendKeySet.forEach((key) => {
+        if (!existingKeyMap.has(key)) {
+          const backendItem = backendDataMap.get(key);
+          if (backendItem) {
+            const recordFields: Record<string, any> = {};
+
+            for (const [backendKey, sheetFieldName] of Object.entries(fieldMapping)) {
+              if (backendItem[backendKey] !== undefined) {
+                let value = backendItem[backendKey];
+
+                // 日期字段特殊处理
+                if (backendKey === 'date' && value) {
+                  value = new Date(value).getTime();
+                }
+
+                recordFields[sheetFieldName as string] = value;
+              }
+            }
+
+            recordsToInsert.push({ fields: recordFields });
+          }
+        }
+      });
+
+      addLog(`需要删除: ${recordsToDelete.length} 条，需要新增: ${recordsToInsert.length} 条`);
+
+      // 第五步：串行执行删除操作
+      let totalDeleted = 0;
+      if (recordsToDelete.length > 0) {
+        addLog('开始删除多余记录...');
+        const BATCH_SIZE = 100;
+        const deleteBatches = Math.ceil(recordsToDelete.length / BATCH_SIZE);
+
+        for (let i = 0; i < deleteBatches; i++) {
+          const start = i * BATCH_SIZE;
+          const batch = recordsToDelete.slice(start, start + BATCH_SIZE);
+
+          addLog(`删除进度: ${i + 1}/${deleteBatches} (${batch.length}条)`);
+          const result = await Dingdocs.script.run('batchDeleteRecords', selectedSheetId, batch);
+          totalDeleted += result.deletedCount;
+
+          // 每次操作后添加短暂延迟，避免累积超时
+          if (i < deleteBatches - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+
+        addLog(`删除完成: ${totalDeleted} 条`);
+      }
+
+      // 第六步：串行执行插入操作
+      let totalInserted = 0;
+      if (recordsToInsert.length > 0) {
+        addLog('开始插入新记录...');
+        const BATCH_SIZE = 100;
+        const insertBatches = Math.ceil(recordsToInsert.length / BATCH_SIZE);
+
+        for (let i = 0; i < insertBatches; i++) {
+          const start = i * BATCH_SIZE;
+          const batch = recordsToInsert.slice(start, start + BATCH_SIZE);
+
+          addLog(`插入进度: ${i + 1}/${insertBatches} (${batch.length}条)`);
+          const result = await Dingdocs.script.run('batchInsertRecords', selectedSheetId, batch);
+          totalInserted += result.insertedCount;
+
+          // 每次操作后添加短暂延迟，避免累积超时
+          if (i < insertBatches - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+
+        addLog(`插入完成: ${totalInserted} 条`);
+      }
+
+      addLog(`✅ 同步完成！新增 ${totalInserted} 条，删除 ${totalDeleted} 条`);
+      message.success(`${locale.syncSuccess}！新增 ${totalInserted} 条，删除 ${totalDeleted} 条`);
     } catch (error: any) {
       const errorMsg = error?.message || JSON.stringify(error) || '未知错误';
-      addLog(`同步失败: ${errorMsg}`);
+      addLog(`❌ 同步失败: ${errorMsg}`);
       message.error(`${locale.syncFailed}: ${errorMsg}`);
       console.error('完整错误信息:', error);
     } finally {
