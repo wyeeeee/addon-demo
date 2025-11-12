@@ -44,32 +44,30 @@ function App() {
           await configDingdocsPermission();
           console.log('[初始化] 权限配置完成');
 
-          // 标记权限已就绪
-          setPermissionReady(true);
-
           const currentLocale = await Dingdocs.base.host.getLocale();
           setLocale(getLocale(currentLocale));
-        } catch (e) {
-          console.error('[初始化] 权限配置失败:', e);
-          message.error('权限配置失败，请刷新页面重试');
-          return;
-        }
 
-        // 权限配置成功后才加载数据表
-        console.log('[初始化] 开始加载数据表...');
-        await loadSheets();
+          // 权限配置成功后立即加载数据表
+          console.log('[初始化] 开始加载数据表...');
+          const sheetList = await Dingdocs.script.run('getAllSheets', { timeout: 30000 });
+          console.log('[初始化] 获取到数据表:', sheetList.length, '个');
+          setSheets(sheetList);
+          if (sheetList.length > 0) {
+            setSelectedSheetId(sheetList[0].id);
+          }
+
+          // 所有初始化完成后标记权限已就绪
+          setPermissionReady(true);
+        } catch (e) {
+          console.error('[初始化] 失败:', e);
+          message.error('初始化失败，请刷新页面重试');
+        }
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSheets = async () => {
-    // 确保权限已配置
-    if (!permissionReady) {
-      console.warn('[加载数据表] 权限未就绪，跳过加载');
-      return;
-    }
-
     try {
       console.log('[加载数据表] 开始获取数据表列表...');
       const sheetList = await Dingdocs.script.run('getAllSheets');
@@ -119,21 +117,75 @@ function App() {
     addLog(`日期: ${dateText}`);
 
     try {
-      // 调用service层的增量同步方法
-      addLog('正在请求后端数据...');
-
-      const result = await Dingdocs.script.run(
-        'syncDataFromBackend',
-        selectedSheetId,
+      // 步骤1：获取后端数据
+      addLog('步骤1/5: 正在请求后端数据...');
+      const backendData = await Dingdocs.script.run(
+        'fetchBackendData',
         startDate,
         startDate === endDate ? undefined : endDate
       );
+      addLog(`✓ 获取到 ${backendData.length} 条后端数据`);
 
-      addLog(`✅ ${result.message}`);
-      message.success(`${locale.syncSuccess}！${result.message}`);
+      // 步骤2：获取表格现有记录
+      addLog('步骤2/5: 正在获取表格现有数据...');
+      const existingRecords = await Dingdocs.script.run('getExistingRecords', selectedSheetId);
+      addLog(`✓ 表格现有 ${existingRecords.length} 条记录`);
+
+      // 步骤3：计算同步差异
+      addLog('步骤3/5: 正在计算同步差异...');
+      const syncDiff = await Dingdocs.script.run(
+        'calculateSyncDiff',
+        selectedSheetId,
+        backendData,
+        existingRecords
+      );
+      addLog(`✓ 需要删除 ${syncDiff.recordsToDelete.length} 条，新增 ${syncDiff.recordsToInsert.length} 条`);
+
+      // 步骤4：执行删除操作
+      if (syncDiff.recordsToDelete.length > 0) {
+        addLog('步骤4/5: 正在删除多余记录...');
+        await Dingdocs.script.run('syncBatchDelete', selectedSheetId, syncDiff.recordsToDelete);
+        addLog(`✓ 删除完成`);
+      } else {
+        addLog('步骤4/5: 无需删除记录');
+      }
+
+      // 步骤5：并发执行插入操作
+      if (syncDiff.recordsToInsert.length > 0) {
+        addLog(`步骤5/5: 正在插入新记录（共 ${syncDiff.totalBatches} 个批次）...`);
+
+        const batchSize = 500;
+        const insertPromises = [];
+
+        for (let i = 0; i < syncDiff.recordsToInsert.length; i += batchSize) {
+          const batch = syncDiff.recordsToInsert.slice(i, i + batchSize);
+          const batchIndex = Math.floor(i / batchSize);
+
+          // 并发执行所有批次的插入
+          insertPromises.push(
+            Dingdocs.script.run(
+              'syncBatchInsert',
+              selectedSheetId,
+              batch,
+              batchIndex,
+              syncDiff.totalBatches
+            )
+          );
+        }
+
+        // 等待所有插入批次完成
+        await Promise.all(insertPromises);
+        addLog(`✓ 插入完成，共 ${syncDiff.recordsToInsert.length} 条`);
+      } else {
+        addLog('步骤5/5: 无需插入记录');
+      }
+
+      const summary = `同步完成！新增 ${syncDiff.recordsToInsert.length} 条，删除 ${syncDiff.recordsToDelete.length} 条`;
+      addLog(`✅ ${summary}`);
+      message.success(summary);
     } catch (error: any) {
       const errorMsg = error?.message || JSON.stringify(error) || '未知错误';
-      addLog(`同步失败: ${errorMsg}`);
+      addLog(`❌ 同步失败: ${errorMsg}`);
       message.error(`${locale.syncFailed}: ${errorMsg}`);
       console.error('完整错误信息:', error);
     } finally {
