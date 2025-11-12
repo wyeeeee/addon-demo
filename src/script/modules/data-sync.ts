@@ -234,6 +234,104 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * 批量删除记录（简单版本，供UI层调用）
+ * @param sheetId 数据表ID
+ * @param recordIds 要删除的记录ID数组
+ */
+export async function batchDeleteRecords(sheetId: string, recordIds: string[]): Promise<{ deletedCount: number }> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
+    }
+
+    if (recordIds.length === 0) {
+      return { deletedCount: 0 };
+    }
+
+    console.log(`开始删除 ${recordIds.length} 条记录...`);
+
+    // 分批删除，每批最多100条
+    let deletedCount = 0;
+    for (let i = 0; i < recordIds.length; i += BATCH_SIZES.DELETE_RECORDS) {
+      const batch = recordIds.slice(i, i + BATCH_SIZES.DELETE_RECORDS);
+      await sheet.deleteRecordsAsync(batch);
+      deletedCount += batch.length;
+      console.log(`已删除 ${deletedCount}/${recordIds.length} 条记录`);
+    }
+
+    console.log(`删除完成: ${deletedCount}条`);
+    return { deletedCount };
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`批量删除记录失败: ${errorMsg}`);
+  }
+}
+
+/**
+ * 批量插入记录（简单版本，供UI层调用）
+ * @param sheetId 数据表ID
+ * @param records 要插入的记录数组
+ */
+export async function batchInsertRecords(sheetId: string, records: any[]): Promise<{ insertedCount: number }> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
+    }
+
+    if (records.length === 0) {
+      return { insertedCount: 0 };
+    }
+
+    console.log(`开始插入 ${records.length} 条记录...`);
+
+    // 分批插入，每批最多500条
+    let insertedCount = 0;
+    for (let i = 0; i < records.length; i += BATCH_SIZES.INSERT_RECORDS) {
+      const batch = records.slice(i, i + BATCH_SIZES.INSERT_RECORDS);
+      await sheet.insertRecordsAsync(batch);
+      insertedCount += batch.length;
+      console.log(`已插入 ${insertedCount}/${records.length} 条记录`);
+    }
+
+    console.log(`插入完成: ${insertedCount}条`);
+    return { insertedCount };
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`批量插入记录失败: ${errorMsg}`);
+  }
+}
+
+/**
+ * 获取表格中所有记录（供UI层调用）
+ * @param sheetId 数据表ID
+ * @returns 返回纯数据对象数组，每个对象包含 id 和 fields
+ */
+export async function getSheetAllRecords(sheetId: string): Promise<Array<{ id: string; fields: Record<string, any> }>> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
+    }
+
+    const records = await getAllRecords(sheet);
+
+    // 将 Record 对象转换为纯数据对象
+    return records.map((record: any) => ({
+      id: record.getId(),
+      fields: record.getCellValues()
+    }));
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`获取表格记录失败: ${errorMsg}`);
+  }
+}
+
+/**
  * 带校验的增量同步：执行同步后校验数据一致性，必要时重试
  */
 async function incrementalSyncWithVerification(
