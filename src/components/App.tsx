@@ -44,45 +44,28 @@ function App() {
           await configDingdocsPermission();
           console.log('[初始化] 权限配置完成');
 
-          // 标记权限已就绪
-          setPermissionReady(true);
-
           const currentLocale = await Dingdocs.base.host.getLocale();
           setLocale(getLocale(currentLocale));
-        } catch (e) {
-          console.error('[初始化] 权限配置失败:', e);
-          message.error('权限配置失败，请刷新页面重试');
-          return;
-        }
 
-        // 权限配置成功后才加载数据表
-        console.log('[初始化] 开始加载数据表...');
-        await loadSheets();
+          // 权限配置成功后立即加载数据表（不依赖状态）
+          console.log('[初始化] 开始加载数据表...');
+          const sheetList = await Dingdocs.script.run('getAllSheets');
+          console.log('[加载数据表] 获取到数据表:', sheetList.length, '个');
+          setSheets(sheetList);
+          if (sheetList.length > 0) {
+            setSelectedSheetId(sheetList[0].id);
+          }
+
+          // 最后标记权限已就绪
+          setPermissionReady(true);
+        } catch (e) {
+          console.error('[初始化] 失败:', e);
+          message.error('初始化失败，请刷新页面重试');
+        }
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const loadSheets = async () => {
-    // 确保权限已配置
-    if (!permissionReady) {
-      console.warn('[加载数据表] 权限未就绪，跳过加载');
-      return;
-    }
-
-    try {
-      console.log('[加载数据表] 开始获取数据表列表...');
-      const sheetList = await Dingdocs.script.run('getAllSheets');
-      console.log('[加载数据表] 获取到数据表:', sheetList.length, '个');
-      setSheets(sheetList);
-      if (sheetList.length > 0 && !selectedSheetId) {
-        setSelectedSheetId(sheetList[0].id);
-      }
-    } catch (error: any) {
-      console.error('[加载数据表] 失败:', error);
-      message.error(`${locale.operationFailed}: ${error.message}`);
-    }
-  };
 
   const addLog = (msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
