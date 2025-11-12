@@ -245,226 +245,101 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * 分批并行操作：将大量数据分成多个批次，每批次内并行执行，批次间串行
- * @param items 要处理的数据数组
- * @param batchSize 每个批次的大小
- * @param parallelCount 并行批次数量
- * @param operation 对每个批次执行的操作
- * @param operationName 操作名称（用于日志）
- * @returns 处理的总数量
+ * 批量删除记录（简单版本，供UI层调用）
+ * @param sheetId 数据表ID
+ * @param recordIds 要删除的记录ID数组
  */
-async function batchParallelOperation<T>(
-  items: T[],
-  batchSize: number,
-  parallelCount: number,
-  operation: (batch: T[]) => Promise<any>,
-  operationName: string
-): Promise<number> {
-  // 将数据分成多个批次
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    batches.push(items.slice(i, i + batchSize));
-  }
-
-  const totalBatches = batches.length;
-  let processedCount = 0;
-
-  // 分组并行处理：每次并行处理 parallelCount 个批次
-  for (let i = 0; i < batches.length; i += parallelCount) {
-    const parallelBatches = batches.slice(i, i + parallelCount);
-    const batchNumbers = parallelBatches.map((_, idx) => i + idx + 1);
-
-    console.log(`${operationName}批次组 [${batchNumbers.join(', ')}]/${totalBatches}，并行处理 ${parallelBatches.length} 个批次...`);
-
-    // 并行执行当前组的所有批次
-    const promises = parallelBatches.map(batch => operation(batch));
-    await Promise.all(promises);
-
-    // 统计已处理的数量
-    parallelBatches.forEach(batch => {
-      processedCount += batch.length;
-    });
-
-    console.log(`${operationName}进度: ${processedCount}/${items.length} (${Math.round(processedCount / items.length * 100)}%)`);
-
-    // 批次组之间添加延迟，避免请求过于密集
-    if (i + parallelCount < batches.length) {
-      await delay(BATCH_SIZES.BATCH_DELAY_MS);
+export async function batchDeleteRecords(sheetId: string, recordIds: string[]): Promise<{ deletedCount: number }> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
     }
-  }
 
-  return processedCount;
-}
-
-/**
- * 步骤1：获取后端数据
- */
-export async function fetchBackendData(startDate: string, endDate?: string) {
-  let apiUrl = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PRODUCT_DAILY_VIEW}`;
-  if (endDate) {
-    apiUrl += `?start_date=${startDate}&end_date=${endDate}`;
-  } else {
-    apiUrl += `?date=${startDate}`;
-  }
-
-  console.log('[步骤1] 正在请求API:', apiUrl);
-  const response = await fetch(apiUrl);
-
-  if (!response.ok) {
-    throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
-  }
-
-  const result = await response.json();
-  if (result.code !== 0) {
-    throw new Error(result.msg || '获取数据失败');
-  }
-
-  console.log('[步骤1] 获取到数据条数:', result.data?.length || 0);
-  return result.data || [];
-}
-
-/**
- * 步骤2：获取表格现有记录
- */
-export async function getExistingRecords(sheetId: string) {
-  const base = DingdocsScript.base;
-  const sheet = base.getSheet(sheetId);
-  if (!sheet) {
-    throw new Error(`未找到指定的数据表: ${sheetId}`);
-  }
-
-  console.log('[步骤2] 正在获取表格现有数据...');
-  const records = await getAllRecords(sheet);
-  console.log('[步骤2] 表格现有记录数:', records.length);
-
-  return records.map(record => ({
-    id: record.getId(),
-    date: record.getCellValue('日期'),
-    productId: record.getCellValue('商品ID')
-  }));
-}
-
-/**
- * 步骤3：计算需要同步的差异
- */
-export async function calculateSyncDiff(sheetId: string, backendData: any[], existingRecords: any[]) {
-  const base = DingdocsScript.base;
-  const sheet = base.getSheet(sheetId);
-  if (!sheet) {
-    throw new Error(`未找到指定的数据表: ${sheetId}`);
-  }
-
-  console.log('[步骤3] 开始计算同步差异...');
-
-  // 构建后端数据的唯一标识集合
-  const backendKeySet = new Set<string>();
-  const backendDataMap = new Map<string, any>();
-
-  backendData.forEach((item: any) => {
-    const dateStr = item.date.split('T')[0];
-    const key = generateRecordKey(dateStr, String(item.product_id));
-    backendKeySet.add(key);
-    backendDataMap.set(key, item);
-  });
-
-  // 构建表格数据的唯一标识映射
-  const existingKeyMap = new Map<string, any>();
-  existingRecords.forEach((record: any) => {
-    if (record.date && record.productId) {
-      const dateStr = new Date(record.date).toISOString().split('T')[0];
-      const key = generateRecordKey(dateStr, String(record.productId));
-      existingKeyMap.set(key, record.id);
+    if (recordIds.length === 0) {
+      return { deletedCount: 0 };
     }
-  });
 
-  // 找出需要删除的记录
-  const recordsToDelete: string[] = [];
-  existingKeyMap.forEach((recordId, key) => {
-    if (!backendKeySet.has(key)) {
-      recordsToDelete.push(recordId);
+    console.log(`开始删除 ${recordIds.length} 条记录...`);
+
+    // 分批删除，每批最多100条
+    let deletedCount = 0;
+    for (let i = 0; i < recordIds.length; i += BATCH_SIZES.DELETE_RECORDS) {
+      const batch = recordIds.slice(i, i + BATCH_SIZES.DELETE_RECORDS);
+      await sheet.deleteRecordsAsync(batch);
+      deletedCount += batch.length;
+      console.log(`已删除 ${deletedCount}/${recordIds.length} 条记录`);
     }
-  });
 
-  // 找出需要新增的记录
-  const recordsToInsert: any[] = [];
-  const fields = sheet.getFields();
-  const fieldMap = new Map<string, any>();
-  fields.forEach((field: any) => {
-    fieldMap.set(field.getName(), field);
-  });
-
-  backendKeySet.forEach((key) => {
-    if (!existingKeyMap.has(key)) {
-      const backendItem = backendDataMap.get(key);
-      if (backendItem) {
-        const recordFields: Record<string, any> = {};
-        for (const [backendKey, sheetFieldName] of Object.entries(FIELD_MAPPING)) {
-          if (fieldMap.has(sheetFieldName) && backendItem[backendKey] !== undefined) {
-            let value = backendItem[backendKey];
-            if (backendKey === 'date' && value) {
-              value = new Date(value).getTime();
-            }
-            recordFields[sheetFieldName] = value;
-          }
-        }
-        recordsToInsert.push({ fields: recordFields });
-      }
-    }
-  });
-
-  console.log('[步骤3] 需要删除:', recordsToDelete.length, '条');
-  console.log('[步骤3] 需要新增:', recordsToInsert.length, '条');
-
-  return {
-    recordsToDelete,
-    recordsToInsert,
-    totalBatches: Math.ceil(recordsToInsert.length / BATCH_SIZES.INSERT_RECORDS)
-  };
+    console.log(`删除完成: ${deletedCount}条`);
+    return { deletedCount };
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`批量删除记录失败: ${errorMsg}`);
+  }
 }
 
 /**
- * 步骤4：执行批量删除
+ * 批量插入记录（简单版本，供UI层调用）
+ * @param sheetId 数据表ID
+ * @param records 要插入的记录数组
  */
-export async function syncBatchDelete(sheetId: string, recordIds: string[]) {
-  const base = DingdocsScript.base;
-  const sheet = base.getSheet(sheetId);
-  if (!sheet) {
-    throw new Error(`未找到指定的数据表: ${sheetId}`);
+export async function batchInsertRecords(sheetId: string, records: any[]): Promise<{ insertedCount: number }> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
+    }
+
+    if (records.length === 0) {
+      return { insertedCount: 0 };
+    }
+
+    console.log(`开始插入 ${records.length} 条记录...`);
+
+    // 分批插入，每批最多500条
+    let insertedCount = 0;
+    for (let i = 0; i < records.length; i += BATCH_SIZES.INSERT_RECORDS) {
+      const batch = records.slice(i, i + BATCH_SIZES.INSERT_RECORDS);
+      await sheet.insertRecordsAsync(batch);
+      insertedCount += batch.length;
+      console.log(`已插入 ${insertedCount}/${records.length} 条记录`);
+    }
+
+    console.log(`插入完成: ${insertedCount}条`);
+    return { insertedCount };
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`批量插入记录失败: ${errorMsg}`);
   }
-
-  if (recordIds.length === 0) {
-    return { deletedCount: 0 };
-  }
-
-  console.log(`[批量删除] 开始删除 ${recordIds.length} 条记录...`);
-
-  let deletedCount = 0;
-  for (let i = 0; i < recordIds.length; i += BATCH_SIZES.DELETE_RECORDS) {
-    const batch = recordIds.slice(i, i + BATCH_SIZES.DELETE_RECORDS);
-    await sheet.deleteRecordsAsync(batch);
-    deletedCount += batch.length;
-  }
-
-  console.log(`[批量删除] 完成，共删除 ${deletedCount} 条`);
-  return { deletedCount };
 }
 
 /**
- * 步骤5：执行批量插入（单个批次）
+ * 获取表格中所有记录（供UI层调用）
+ * @param sheetId 数据表ID
+ * @returns 返回纯数据对象数组，每个对象包含 id 和 fields
  */
-export async function syncBatchInsert(sheetId: string, records: any[], batchIndex: number, totalBatches: number) {
-  const base = DingdocsScript.base;
-  const sheet = base.getSheet(sheetId);
-  if (!sheet) {
-    throw new Error(`未找到指定的数据表: ${sheetId}`);
+export async function getSheetAllRecords(sheetId: string): Promise<Array<{ id: string; fields: Record<string, any> }>> {
+  try {
+    const base = DingdocsScript.base;
+    const sheet = base.getSheet(sheetId);
+    if (!sheet) {
+      throw new Error('未找到指定的数据表');
+    }
+
+    const records = await getAllRecords(sheet);
+
+    // 将 Record 对象转换为纯数据对象
+    return records.map((record: any) => ({
+      id: record.getId(),
+      fields: record.getCellValues()
+    }));
+  } catch (error: any) {
+    const errorMsg = error?.message || error?.toString() || '未知错误';
+    throw new Error(`获取表格记录失败: ${errorMsg}`);
   }
-
-  console.log(`[批量插入] 批次 ${batchIndex + 1}/${totalBatches}，插入 ${records.length} 条记录...`);
-
-  await sheet.insertRecordsAsync(records);
-
-  console.log(`[批量插入] 批次 ${batchIndex + 1}/${totalBatches} 完成`);
-  return { insertedCount: records.length };
 }
 
 /**
