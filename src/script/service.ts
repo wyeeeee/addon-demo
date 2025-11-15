@@ -30,11 +30,13 @@ import {
 } from './modules/record-operations.ts';
 
 import {
-  syncDataFromBackend,
   batchDeleteRecords,
   batchInsertRecords,
   getSheetAllRecords
 } from './modules/data-sync.ts';
+
+import { getAllMappingConfigs } from './modules/mapping-config.ts';
+import { compareData } from './modules/data-compare.ts';
 
 // 注册所有方法供UI层调用
 DingdocsScript.registerScript('getActiveSheet', getActiveSheet);
@@ -51,9 +53,10 @@ DingdocsScript.registerScript('deleteRecord', deleteRecord);
 DingdocsScript.registerScript('deleteRecords', deleteRecords);
 DingdocsScript.registerScript('insertRecords', insertRecords);
 DingdocsScript.registerScript('getDocumentInfo', getDocumentInfo);
-DingdocsScript.registerScript('syncDataFromBackend', syncDataFromBackend);
 DingdocsScript.registerScript('batchDeleteRecords', batchDeleteRecords);
 DingdocsScript.registerScript('batchInsertRecords', batchInsertRecords);
 DingdocsScript.registerScript('getSheetAllRecords', getSheetAllRecords);
+DingdocsScript.registerScript('getAllMappingConfigs', getAllMappingConfigs);
+DingdocsScript.registerScript('compareData', compareData);
 
 export {};

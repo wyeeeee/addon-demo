@@ -4,9 +4,9 @@
  */
 
 export const API_CONFIG = {
-  BASE_URL: 'https://xipiapi.moonmark.chat',
+  BASE_URL: '',
   ENDPOINTS: {
-    PRODUCT_DAILY_VIEW: '/api/product-daily-view',
+    PRODUCT_DAILY_VIEW: 'https:/xipi.moonmark.chat/api/product-daily-view',
     DINGTALK_SIGN: '/api/dingtalk/sign'
   }
 } as const;

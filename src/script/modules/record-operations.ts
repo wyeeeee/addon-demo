@@ -1,8 +1,7 @@
 /*global DingdocsScript*/
 
-import { BATCH_SIZES, FIELD_MAPPING } from './constants.ts';
+import { BATCH_SIZES } from './constants.ts';
 import { getSheet, mapRecordToObject } from './utils.ts';
-import { syncSheetFields } from './field-operations.ts';
 
 /**
  * Record 操作模块
@@ -120,51 +119,25 @@ export async function deleteRecords(sheetId: string, recordIds: string[]) {
 }
 
 /**
- * 批量插入记录（带字段映射，支持并行插入）
+ * 批量插入记录（简化版本，直接插入已格式化的记录）
  */
-export async function insertRecords(sheetId: string, backendData: any[]) {
+export async function insertRecords(sheetId: string, records: any[]) {
   const base = DingdocsScript.base;
   const sheet = base.getSheet(sheetId);
   if (!sheet) throw new Error('未找到数据表');
 
-  // 在插入数据前,先同步字段
-  await syncSheetFields(sheetId);
-
-  // 重新获取字段映射（因为字段可能已变更）
-  const fields = sheet.getFields();
-  const fieldMap = new Map<string, any>();
-  fields.forEach((field: any) => {
-    fieldMap.set(field.getName(), field);
-  });
-
-  const recordsToInsert = backendData.map((item: any) => {
-    const fields: Record<string, any> = {};
-
-    for (const [backendKey, sheetFieldName] of Object.entries(FIELD_MAPPING)) {
-      if (fieldMap.has(sheetFieldName) && item[backendKey] !== undefined) {
-        let value = item[backendKey];
-        if (backendKey === 'date' && value) {
-          value = new Date(value).getTime();
-        }
-        fields[sheetFieldName] = value;
-      }
-    }
-
-    return { fields };
-  });
-
   // 如果数据量较少，直接插入
-  if (recordsToInsert.length <= BATCH_SIZES.INSERT_RECORDS) {
-    await sheet.insertRecordsAsync(recordsToInsert);
-    return { success: true, count: recordsToInsert.length };
+  if (records.length <= BATCH_SIZES.INSERT_RECORDS) {
+    await sheet.insertRecordsAsync(records);
+    return { success: true, count: records.length };
   }
 
   // 如果数据量较多，使用并行批量插入
   const insertPromises = [];
-  for (let i = 0; i < recordsToInsert.length; i += BATCH_SIZES.INSERT_RECORDS) {
-    const batch = recordsToInsert.slice(i, i + BATCH_SIZES.INSERT_RECORDS);
+  for (let i = 0; i < records.length; i += BATCH_SIZES.INSERT_RECORDS) {
+    const batch = records.slice(i, i + BATCH_SIZES.INSERT_RECORDS);
     insertPromises.push(sheet.insertRecordsAsync(batch));
   }
   await Promise.all(insertPromises);
-  return { success: true, count: recordsToInsert.length };
+  return { success: true, count: records.length };
 }
